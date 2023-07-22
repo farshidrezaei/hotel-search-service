@@ -1,0 +1,80 @@
+version: "3.8"
+services:
+  nginx:
+    restart: always
+    container_name: ${APP_NAME}_nginx
+    depends_on:
+      - core
+    working_dir: /var/www/html
+    ports:
+      - "8080:80"
+    volumes:
+      - ./:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/logs/:/var/log/nginx/
+    build:
+      context: ./docker/nginx
+      dockerfile: Dockerfile
+      args:
+        USER: laravel
+        GROUP: laravel
+        UID: 1000
+        GID: 1000
+    networks:
+      - core_network
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+
+  core:
+    restart: always
+    build:
+      context: docker/php
+      dockerfile: Dockerfile
+      args:
+        USER: laravel
+        GROUP: laravel
+        UID: 1000
+        GID: 1000
+    container_name: ${APP_NAME}_php
+    working_dir: /var/www/html
+    volumes:
+      - ./:/var/www/html
+      - ./docker/php/www.conf:/usr/local/etc/php-fpm.d/www.conf
+      - ./docker/php/core.ini:/usr/local/etc/php/conf.d/core.ini
+    networks:
+      - core_network
+      - hotel-core-service_core_network
+
+  supervisor:
+    restart: always
+    build:
+      context: docker/php
+      dockerfile: Dockerfile
+      args:
+        USER: laravel
+        GROUP: laravel
+        UID: 1000
+        GID: 1000
+    container_name: ${APP_NAME}_supervisor
+    working_dir: /var/www/html
+    volumes:
+      - ./:/var/www/html
+    networks:
+      - core_network
+      - hotel-core-service_core_network
+    entrypoint: [ "/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf" ]
+
+
+  redis:
+    container_name: ${APP_NAME}_redis
+    image: redis:latest
+    command: >
+      --requirepass ${REDIS_PASSWORD}
+    networks:
+      - core_network
+
+networks:
+  core_network:
+    driver: bridge
+  hotel-core-service_core_network:
+    external: true
